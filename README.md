@@ -2,6 +2,30 @@
 
 Bulletin board service.
 
+## Docker artifact
+
+This fork builds the backend and frontend into a single Spring Boot application image. The expected artifact is a Docker image named `project-devops-deploy` that contains the executable jar with the compiled React Admin frontend in Spring static resources.
+
+Build the image:
+
+```bash
+make docker-build
+```
+
+Start the container:
+
+```bash
+make docker-start
+```
+
+Equivalent direct command:
+
+```bash
+docker run --rm -p 8080:8080 -p 9090:9090 project-devops-deploy
+```
+
+Open the service at `http://localhost:8080/`; Swagger UI is available at `http://localhost:8080/swagger-ui/index.html`.
+
 > **Fork policy**: this upstream repository is read-only. We do not review or merge pull requests and we do not accept infrastructure changes (Dockerfiles, Ansible roles, CI/CD workflows, etc.). To experiment or extend the project, fork it and work inside your own repository.
 
 The default `dev` profile uses an in-memory H2 database and seeds 10 sample bulletins through `DataInitializer`, so the API works immediately after startup.
