@@ -1,3 +1,5 @@
+[![CI](https://github.com/neutron-1985/project-devops-deploy/actions/workflows/ci.yml/badge.svg)](https://github.com/neutron-1985/project-devops-deploy/actions/workflows/ci.yml)
+
 # Project DevOps Deploy
 
 Bulletin board service.
