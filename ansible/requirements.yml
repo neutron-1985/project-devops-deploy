@@ -1,0 +1,9 @@
+---
+roles:
+  - name: geerlingguy.docker
+    version: 8.0.0
+
+collections:
+  - name: community.general
+    version: 13.1.0
+

@@ -34,4 +34,14 @@ lint:
 lint-fix:
 	./gradlew spotlessApply
 
-.PHONY: build docker-build docker-start
+ansible-install:
+	ansible-galaxy install -r ansible/requirements.yml
+
+ansible-deploy:
+	ansible-playbook -i ansible/inventory.ini playbook.yml
+
+ansible-check:
+	ansible-playbook -i ansible/inventory.ini playbook.yml --check
+
+
+.PHONY: build docker-build docker-start ansible-install ansible-deploy ansible-check
