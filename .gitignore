@@ -38,6 +38,8 @@ out/
 *.db
 
 ### Ansible ###
-ansible/roles/
+ansible/roles/*
+!ansible/roles/app_deploy
+!ansible/roles/app_deploy/**
 ansible/collections/
 ansible/inventory.ini

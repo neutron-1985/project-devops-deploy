@@ -1,6 +1,8 @@
 IMAGE_NAME ?= project-devops-deploy
 APP_PORT ?= 8080
 MANAGEMENT_PORT ?= 9090
+ANSIBLE_VAULT_ARGS ?= --ask-vault-pass
+ANSIBLE_CONFIG ?= ansible/ansible.cfg
 
 test:
 	./gradlew test
@@ -35,13 +37,13 @@ lint-fix:
 	./gradlew spotlessApply
 
 ansible-install:
-	ansible-galaxy install -r ansible/requirements.yml
+	ANSIBLE_CONFIG=$(ANSIBLE_CONFIG) ansible-galaxy install -r ansible/requirements.yml
 
 ansible-deploy:
-	ansible-playbook -i ansible/inventory.ini playbook.yml
+	ANSIBLE_CONFIG=$(ANSIBLE_CONFIG) ansible-playbook -i ansible/inventory.ini playbook.yml $(ANSIBLE_VAULT_ARGS)
 
 ansible-check:
-	ansible-playbook -i ansible/inventory.ini playbook.yml --check
+	ANSIBLE_CONFIG=$(ANSIBLE_CONFIG) ansible-playbook -i ansible/inventory.ini playbook.yml --check $(ANSIBLE_VAULT_ARGS)
 
 
 .PHONY: build docker-build docker-start ansible-install ansible-deploy ansible-check

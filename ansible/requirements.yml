@@ -6,4 +6,5 @@ roles:
 collections:
   - name: community.general
     version: 13.1.0
+  - name: community.docker
 

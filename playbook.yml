@@ -50,3 +50,7 @@
     - name: Enable UFW
       community.general.ufw:
         state: enabled
+
+    - name: Deploy application
+      ansible.builtin.include_role:
+        name: app_deploy
