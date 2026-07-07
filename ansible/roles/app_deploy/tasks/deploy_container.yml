@@ -1,0 +1,32 @@
+---
+- name: Log in to Docker Hub
+  community.docker.docker_login:
+    username: "{{ docker_username }}"
+    password: "{{ docker_password }}"
+  no_log: true
+
+- name: Run target application container
+  community.docker.docker_container:
+    name: "{{ app_target_container_name }}"
+    image: "{{ app_image }}"
+    state: started
+    restart_policy: always
+    recreate: true
+    pull: always
+    ports:
+      - "127.0.0.1:{{ app_target_app_port }}:8080"
+      - "127.0.0.1:{{ app_target_management_port }}:9090"
+    env:
+      SPRING_PROFILES_ACTIVE: "{{ app_profile }}"
+      MANAGEMENT_SERVER_PORT: "9090"
+      JAVA_OPTS: "{{ app_java_opts }}"
+
+- name: Wait until target application is ready
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ app_target_management_port }}/actuator/health/readiness"
+    method: GET
+    status_code: 200
+  register: app_healthcheck
+  retries: "{{ app_healthcheck_retries }}"
+  delay: "{{ app_healthcheck_delay }}"
+  until: app_healthcheck.status == 200

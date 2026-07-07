@@ -1,32 +1,15 @@
 ---
-- name: Log in to Docker Hub
-  community.docker.docker_login:
-    username: "{{ docker_username }}"
-    password: "{{ docker_password }}"
-  no_log: true
+- name: Configure Nginx
+  ansible.builtin.import_tasks: nginx.yml
 
-- name: Run application container
-  community.docker.docker_container:
-    name: "{{ app_container_name }}"
-    image: "{{ app_image }}"
-    state: started
-    restart_policy: always
-    recreate: true
-    pull: always
-    ports:
-      - "{{ app_port }}:8080"
-      - "127.0.0.1:{{ app_management_port }}:9090"
-    env:
-      SPRING_PROFILES_ACTIVE: "{{ app_profile }}"
-      MANAGEMENT_SERVER_PORT: "9090"
-      JAVA_OPTS: "{{ app_java_opts }}"
+- name: Choose deployment slot
+  ansible.builtin.import_tasks: slots.yml
 
-- name: Wait until application is ready
-  ansible.builtin.uri:
-    url: "{{ app_healthcheck_url }}"
-    method: GET
-    status_code: 200
-  register: app_healthcheck
-  retries: "{{ app_healthcheck_retries }}"
-  delay: "{{ app_healthcheck_delay }}"
-  until: app_healthcheck.status == 200
+- name: Deploy target container
+  ansible.builtin.import_tasks: deploy_container.yml
+
+- name: Switch traffic to target slot
+  ansible.builtin.import_tasks: switch_traffic.yml
+
+- name: Clean up previous deployment
+  ansible.builtin.import_tasks: cleanup.yml

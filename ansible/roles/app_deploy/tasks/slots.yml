@@ -1,0 +1,31 @@
+---
+- name: Create application state directory
+  ansible.builtin.file:
+    path: "{{ app_state_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Check active deployment slot
+  ansible.builtin.stat:
+    path: "{{ app_active_slot_file }}"
+  register: app_active_slot_stat
+
+- name: Read active deployment slot
+  ansible.builtin.slurp:
+    src: "{{ app_active_slot_file }}"
+  register: app_active_slot_raw
+  when: app_active_slot_stat.stat.exists
+
+- name: Choose target deployment slot
+  ansible.builtin.set_fact:
+    app_active_slot: "{{ (app_active_slot_raw.content | b64decode | trim) if app_active_slot_stat.stat.exists else 'blue' }}"
+    app_target_slot: "{{ 'green' if ((app_active_slot_raw.content | default('Ymx1ZQ==') | b64decode | trim) == 'blue') else 'blue' }}"
+
+- name: Set target deployment facts
+  ansible.builtin.set_fact:
+    app_target_container_name: "{{ app_container_name }}-{{ app_target_slot }}"
+    app_previous_container_name: "{{ app_container_name }}-{{ app_active_slot }}"
+    app_target_app_port: "{{ app_slots[app_target_slot].app_port }}"
+    app_target_management_port: "{{ app_slots[app_target_slot].management_port }}"
