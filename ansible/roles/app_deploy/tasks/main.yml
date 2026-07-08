@@ -1,15 +1,3 @@
 ---
-- name: Configure Nginx
-  ansible.builtin.import_tasks: nginx.yml
-
-- name: Choose deployment slot
-  ansible.builtin.import_tasks: slots.yml
-
-- name: Deploy target container
+- name: Deploy application container
   ansible.builtin.import_tasks: deploy_container.yml
-
-- name: Switch traffic to target slot
-  ansible.builtin.import_tasks: switch_traffic.yml
-
-- name: Clean up previous deployment
-  ansible.builtin.import_tasks: cleanup.yml

@@ -1,26 +1,26 @@
 ---
+# Docker image and container identity.
 app_container_name: project-devops-deploy
 app_image: "{{ docker_username }}/{{ docker_image }}:latest"
+
+# Published container ports.
 app_public_port: "8080"
-app_port: "{{ app_public_port }}"
+app_container_management_port: "9090"
+
+# Runtime configuration passed to the Spring Boot application.
 app_profile: dev
 app_java_opts: "-Xms256m -Xmx512m"
+
+# Persistent host paths. Uploaded images are mounted into the path used by LocalImageStorageService.
+app_data_dir: /var/lib/project-devops-deploy
+app_uploads_dir: "{{ app_data_dir }}/bulletin-images"
+app_log_dir: /var/log/project-devops-deploy
+app_container_uploads_dir: /tmp/bulletin-images
+
+# Health checks.
 app_healthcheck_retries: 30
 app_healthcheck_delay: 5
-app_state_dir: /etc/project-devops-deploy
-app_active_slot_file: "{{ app_state_dir }}/active_slot"
-app_nginx_conf_path: /etc/nginx/sites-available/project-devops-deploy.conf
-app_nginx_enabled_path: /etc/nginx/sites-enabled/project-devops-deploy.conf
-app_nginx_remove_default_site: true
-app_nginx_main_conf_path: /etc/nginx/nginx.conf
-app_slots:
-  blue:
-    app_port: "8081"
-    management_port: "9091"
-  green:
-    app_port: "8082"
-    management_port: "9092"
-app_proxy_healthcheck_path: /
-app_proxy_healthcheck_status_codes:
+app_healthcheck_path: /
+app_healthcheck_status_codes:
   - 200
   - 302

@@ -7,9 +7,8 @@
         groups: docker
     allowed_tcp_ports:
       - "22"
-      - "80"
-      - "443"
       - "8080"
+      - "9090"
 
   roles:
     - geerlingguy.docker

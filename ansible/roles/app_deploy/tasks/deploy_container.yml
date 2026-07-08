@@ -1,32 +1,67 @@
 ---
-- name: Log in to Docker Hub
-  community.docker.docker_login:
-    username: "{{ docker_username }}"
-    password: "{{ docker_password }}"
-  no_log: true
+- name: Create application persistent directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  loop:
+    - path: "{{ app_data_dir }}"
+      mode: "0755"
+    - path: "{{ app_uploads_dir }}"
+      mode: "0777"
+    - path: "{{ app_log_dir }}"
+      mode: "0755"
 
-- name: Run target application container
+- name: Record application restart start time
+  ansible.builtin.command: date +%s
+  register: app_restart_started_at
+  changed_when: false
+
+- name: Run application container
   community.docker.docker_container:
-    name: "{{ app_target_container_name }}"
+    name: "{{ app_container_name }}"
     image: "{{ app_image }}"
     state: started
     restart_policy: always
     recreate: true
     pull: always
     ports:
-      - "127.0.0.1:{{ app_target_app_port }}:8080"
-      - "127.0.0.1:{{ app_target_management_port }}:9090"
+      - "0.0.0.0:{{ app_public_port }}:8080"
+      - "0.0.0.0:{{ app_container_management_port }}:9090"
+    volumes:
+      - "{{ app_uploads_dir }}:{{ app_container_uploads_dir }}"
     env:
       SPRING_PROFILES_ACTIVE: "{{ app_profile }}"
       MANAGEMENT_SERVER_PORT: "9090"
       JAVA_OPTS: "{{ app_java_opts }}"
 
-- name: Wait until target application is ready
+- name: Wait until application is ready
   ansible.builtin.uri:
-    url: "http://127.0.0.1:{{ app_target_management_port }}/actuator/health/readiness"
+    url: "http://127.0.0.1:{{ app_container_management_port }}/actuator/health/readiness"
     method: GET
     status_code: 200
   register: app_healthcheck
   retries: "{{ app_healthcheck_retries }}"
   delay: "{{ app_healthcheck_delay }}"
   until: app_healthcheck.status == 200
+
+- name: Record application ready time
+  ansible.builtin.command: date +%s
+  register: app_ready_at
+  changed_when: false
+
+- name: Report application restart window
+  ansible.builtin.debug:
+    msg: "Application restart window: {{ app_ready_at.stdout | int - app_restart_started_at.stdout | int }} seconds"
+
+- name: Check application public endpoint
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ app_public_port }}{{ app_healthcheck_path }}"
+    method: GET
+    status_code: "{{ app_healthcheck_status_codes }}"
+  register: app_public_healthcheck
+  retries: "{{ app_healthcheck_retries }}"
+  delay: "{{ app_healthcheck_delay }}"
+  until: app_public_healthcheck.status in app_healthcheck_status_codes

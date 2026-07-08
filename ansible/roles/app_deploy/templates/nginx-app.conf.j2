@@ -1,7 +1,0 @@
-server {
-    listen {{ app_public_port }};
-
-    location / {
-        proxy_pass http://127.0.0.1:{{ app_target_app_port }};
-    }
-}
