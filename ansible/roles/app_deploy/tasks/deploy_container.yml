@@ -14,54 +14,117 @@
     - path: "{{ app_log_dir }}"
       mode: "0755"
 
-- name: Record application restart start time
-  ansible.builtin.command: date +%s
-  register: app_restart_started_at
-  changed_when: false
-
-- name: Run application container
-  community.docker.docker_container:
+- name: Inspect current application container
+  community.docker.docker_container_info:
     name: "{{ app_container_name }}"
-    image: "{{ app_image }}"
-    state: started
-    restart_policy: always
-    recreate: true
-    pull: always
-    ports:
-      - "0.0.0.0:{{ app_public_port }}:8080"
-      - "0.0.0.0:{{ app_container_management_port }}:9090"
-    volumes:
-      - "{{ app_uploads_dir }}:{{ app_container_uploads_dir }}"
-    env:
-      SPRING_PROFILES_ACTIVE: "{{ app_profile }}"
-      MANAGEMENT_SERVER_PORT: "9090"
-      JAVA_OPTS: "{{ app_java_opts }}"
+  register: app_existing_container
 
-- name: Wait until application is ready
-  ansible.builtin.uri:
-    url: "http://127.0.0.1:{{ app_container_management_port }}/actuator/health/readiness"
-    method: GET
-    status_code: 200
-  register: app_healthcheck
-  retries: "{{ app_healthcheck_retries }}"
-  delay: "{{ app_healthcheck_delay }}"
-  until: app_healthcheck.status == 200
+- name: Remember current application image for rollback
+  ansible.builtin.set_fact:
+    app_rollback_image: "{{ app_existing_container.container.Image | default(app_existing_container.container.Config.Image) }}"
+  when: app_existing_container.exists | default(false)
 
-- name: Record application ready time
-  ansible.builtin.command: date +%s
-  register: app_ready_at
-  changed_when: false
+- name: Deploy application container with automatic rollback
+  block:
+    - name: Record application restart start time
+      ansible.builtin.command: date +%s
+      register: app_restart_started_at
+      changed_when: false
 
-- name: Report application restart window
-  ansible.builtin.debug:
-    msg: "Application restart window: {{ app_ready_at.stdout | int - app_restart_started_at.stdout | int }} seconds"
+    - name: Run application container
+      community.docker.docker_container:
+        name: "{{ app_container_name }}"
+        image: "{{ app_image }}"
+        state: started
+        restart_policy: always
+        recreate: true
+        pull: always
+        ports:
+          - "0.0.0.0:{{ app_public_port }}:8080"
+          - "0.0.0.0:{{ app_container_management_port }}:9090"
+        volumes:
+          - "{{ app_uploads_dir }}:{{ app_container_uploads_dir }}"
+        env:
+          SPRING_PROFILES_ACTIVE: "{{ app_profile }}"
+          MANAGEMENT_SERVER_PORT: "9090"
+          JAVA_OPTS: "{{ app_java_opts }}"
 
-- name: Check application public endpoint
-  ansible.builtin.uri:
-    url: "http://127.0.0.1:{{ app_public_port }}{{ app_healthcheck_path }}"
-    method: GET
-    status_code: "{{ app_healthcheck_status_codes }}"
-  register: app_public_healthcheck
-  retries: "{{ app_healthcheck_retries }}"
-  delay: "{{ app_healthcheck_delay }}"
-  until: app_public_healthcheck.status in app_healthcheck_status_codes
+    - name: Wait until application is ready
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ app_container_management_port }}/actuator/health/readiness"
+        method: GET
+        status_code: 200
+      register: app_healthcheck
+      retries: "{{ app_healthcheck_retries }}"
+      delay: "{{ app_healthcheck_delay }}"
+      until: app_healthcheck.status == 200
+
+    - name: Record application ready time
+      ansible.builtin.command: date +%s
+      register: app_ready_at
+      changed_when: false
+
+    - name: Report application restart window
+      ansible.builtin.debug:
+        msg: "Application restart window: {{ app_ready_at.stdout | int - app_restart_started_at.stdout | int }} seconds"
+
+    - name: Check application public endpoint
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ app_public_port }}{{ app_healthcheck_path }}"
+        method: GET
+        status_code: "{{ app_healthcheck_status_codes }}"
+      register: app_public_healthcheck
+      retries: "{{ app_healthcheck_retries }}"
+      delay: "{{ app_healthcheck_delay }}"
+      until: app_public_healthcheck.status in app_healthcheck_status_codes
+
+  rescue:
+    - name: Report failed deployment rollback
+      ansible.builtin.debug:
+        msg: 'Deployment of {{ app_image }} failed; rolling back to {{ app_rollback_image | default("no previous image") }}'
+
+    - name: Fail when rollback image is unavailable
+      ansible.builtin.fail:
+        msg: "Deployment failed and no previous application container image is available for rollback."
+      when: app_rollback_image is not defined
+
+    - name: Roll back application container
+      community.docker.docker_container:
+        name: "{{ app_container_name }}"
+        image: "{{ app_rollback_image }}"
+        state: started
+        restart_policy: always
+        recreate: true
+        ports:
+          - "0.0.0.0:{{ app_public_port }}:8080"
+          - "0.0.0.0:{{ app_container_management_port }}:9090"
+        volumes:
+          - "{{ app_uploads_dir }}:{{ app_container_uploads_dir }}"
+        env:
+          SPRING_PROFILES_ACTIVE: "{{ app_profile }}"
+          MANAGEMENT_SERVER_PORT: "9090"
+          JAVA_OPTS: "{{ app_java_opts }}"
+
+    - name: Wait until rolled back application is ready
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ app_container_management_port }}/actuator/health/readiness"
+        method: GET
+        status_code: 200
+      register: app_rollback_healthcheck
+      retries: "{{ app_healthcheck_retries }}"
+      delay: "{{ app_healthcheck_delay }}"
+      until: app_rollback_healthcheck.status == 200
+
+    - name: Check rolled back application public endpoint
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ app_public_port }}{{ app_healthcheck_path }}"
+        method: GET
+        status_code: "{{ app_healthcheck_status_codes }}"
+      register: app_rollback_public_healthcheck
+      retries: "{{ app_healthcheck_retries }}"
+      delay: "{{ app_healthcheck_delay }}"
+      until: app_rollback_public_healthcheck.status in app_healthcheck_status_codes
+
+    - name: Fail deployment after successful rollback
+      ansible.builtin.fail:
+        msg: "Deployment of {{ app_image }} failed. Rolled back to {{ app_rollback_image }}."

@@ -115,6 +115,28 @@ All other variables supported by Spring Boot can be overridden the same way; che
 
 `JAVA_OPTS` can be used to control heap size, GC, or add any `-D` system properties without editing the manifest.
 
+### Deployment
+
+Deploy the latest image in one command:
+
+```bash
+make deploy
+```
+
+Deploy a stable image tag explicitly:
+
+```bash
+make deploy APP_IMAGE_TAG=v1.2.3
+```
+
+Rollback uses the same deployment path with a previously published stable tag:
+
+```bash
+make deploy APP_IMAGE_TAG=v1.2.2
+```
+
+Avoid using `latest` for rollback; choose the exact tag that was known to work.
+
 ### Useful commands
 
 See [Makefile](./Makefile)

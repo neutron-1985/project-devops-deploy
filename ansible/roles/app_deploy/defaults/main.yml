@@ -1,7 +1,8 @@
 ---
 # Docker image and container identity.
 app_container_name: project-devops-deploy
-app_image: "{{ docker_username }}/{{ docker_image }}:latest"
+app_image_tag: latest
+app_image: "{{ docker_username }}/{{ docker_image }}:{{ app_image_tag }}"
 
 # Published container ports.
 app_public_port: "8080"
