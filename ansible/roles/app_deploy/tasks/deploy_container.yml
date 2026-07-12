@@ -28,6 +28,7 @@
       ansible.builtin.command: date +%s
       register: app_restart_started_at
       changed_when: false
+      when: not ansible_check_mode
 
     - name: Run application container
       community.docker.docker_container:
@@ -55,15 +56,18 @@
       retries: "{{ app_healthcheck_retries }}"
       delay: "{{ app_healthcheck_delay }}"
       until: app_healthcheck.status == 200
+      when: not ansible_check_mode
 
     - name: Record application ready time
       ansible.builtin.command: date +%s
       register: app_ready_at
       changed_when: false
+      when: not ansible_check_mode
 
     - name: Report application restart window
       ansible.builtin.debug:
         msg: "Application restart window: {{ app_ready_at.stdout | int - app_restart_started_at.stdout | int }} seconds"
+      when: not ansible_check_mode
 
     - name: Check application public endpoint
       ansible.builtin.uri:
@@ -73,6 +77,7 @@
       retries: "{{ app_healthcheck_retries }}"
       delay: "{{ app_healthcheck_delay }}"
       until: app_public_healthcheck.status in app_healthcheck_status_codes
+      when: not ansible_check_mode
 
   rescue:
     - name: Report failed deployment rollback
@@ -109,6 +114,7 @@
       retries: "{{ app_healthcheck_retries }}"
       delay: "{{ app_healthcheck_delay }}"
       until: app_rollback_healthcheck.status == 200
+      when: not ansible_check_mode
 
     - name: Check rolled back application public endpoint
       ansible.builtin.uri:
@@ -118,6 +124,7 @@
       retries: "{{ app_healthcheck_retries }}"
       delay: "{{ app_healthcheck_delay }}"
       until: app_rollback_public_healthcheck.status in app_healthcheck_status_codes
+      when: not ansible_check_mode
 
     - name: Fail deployment after successful rollback
       ansible.builtin.fail:

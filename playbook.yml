@@ -1,9 +1,14 @@
-- hosts: production
-  become: false
+- name: Provision production servers
+  hosts: production
+  remote_user: "{{ provision_user }}"
+  become: true
+  gather_facts: false
+  tags:
+    - provision
 
   vars:
     users:
-      - name: deployer
+      - name: "{{ deploy_user }}"
         groups: docker
     allowed_tcp_ports:
       - "22"
@@ -13,11 +18,12 @@
     app_uploads_dir: "{{ app_data_dir }}/bulletin-images"
     app_log_dir: /var/log/project-devops-deploy
 
+  pre_tasks:
+    - name: Gather facts for provisioning
+      ansible.builtin.setup:
+
   roles:
     - role: geerlingguy.docker
-      become: true
-      tags:
-        - provision
 
   tasks:
     - name: Add deploy users
@@ -28,18 +34,12 @@
         state: present
         shell: /bin/bash
       loop: "{{ users }}"
-      become: true
-      tags:
-        - provision
 
     - name: Install UFW
       ansible.builtin.apt:
         name: ufw
         state: present
         update_cache: true
-      become: true
-      tags:
-        - provision
 
     - name: Allow required TCP ports
       community.general.ufw:
@@ -47,38 +47,26 @@
         port: "{{ item }}"
         proto: tcp
       loop: "{{ allowed_tcp_ports }}"
-      become: true
-      tags:
-        - provision
 
     - name: Set default incoming policy to deny
       community.general.ufw:
         direction: incoming
         policy: deny
-      become: true
-      tags:
-        - provision
 
     - name: Set default outgoing policy to allow
       community.general.ufw:
         direction: outgoing
         policy: allow
-      become: true
-      tags:
-        - provision
 
     - name: Enable UFW
       community.general.ufw:
         state: enabled
-      become: true
-      tags:
-        - provision
 
     - name: Create application persistent directories
       ansible.builtin.file:
         path: "{{ item.path }}"
         state: directory
-        owner: deployer
+        owner: "{{ deploy_user }}"
         group: docker
         mode: "{{ item.mode }}"
       loop:
@@ -88,15 +76,14 @@
           mode: "0777"
         - path: "{{ app_log_dir }}"
           mode: "0755"
-      become: true
-      tags:
-        - provision
 
-    - name: Deploy application
-      ansible.builtin.include_role:
-        name: app_deploy
-        apply:
-          tags:
-            - deploy
-      tags:
-        - deploy
+- name: Deploy application
+  hosts: production
+  remote_user: "{{ deploy_user }}"
+  become: false
+  gather_facts: false
+  tags:
+    - deploy
+
+  roles:
+    - role: app_deploy

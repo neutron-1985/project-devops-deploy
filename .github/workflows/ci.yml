@@ -66,25 +66,33 @@ jobs:
       - name: Install Ansible dependencies
         run: make ansible-install
 
-      - name: Configure SSH and inventory
+      - name: Load SSH key
+        uses: webfactory/ssh-agent@v0.10.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
+
+      - name: Configure known hosts
+        env:
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          test -n "$DEPLOY_KNOWN_HOSTS"
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Configure inventory
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
         run: |
           test -n "$DEPLOY_HOST"
           test -n "$DEPLOY_USER"
-          test -n "$DEPLOY_SSH_KEY"
-          mkdir -p ~/.ssh
-          printf "%s\n" "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
           cat > ansible/inventory.ci.ini <<EOF
           [production]
           app ansible_host=$DEPLOY_HOST
 
           [production:vars]
-          ansible_user=$DEPLOY_USER
-          ansible_ssh_private_key_file=~/.ssh/deploy_key
+          deploy_user=$DEPLOY_USER
           EOF
 
       - name: Run Ansible dry-run
@@ -96,7 +104,7 @@ jobs:
       - backend
       - frontend
       - ansible-dry-run
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: read
     steps:
@@ -139,25 +147,33 @@ jobs:
       - name: Install Ansible dependencies
         run: make ansible-install
 
-      - name: Configure SSH and inventory
+      - name: Load SSH key
+        uses: webfactory/ssh-agent@v0.10.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
+
+      - name: Configure known hosts
+        env:
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          test -n "$DEPLOY_KNOWN_HOSTS"
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Configure inventory
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
         run: |
           test -n "$DEPLOY_HOST"
           test -n "$DEPLOY_USER"
-          test -n "$DEPLOY_SSH_KEY"
-          mkdir -p ~/.ssh
-          printf "%s\n" "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
           cat > ansible/inventory.ci.ini <<EOF
           [production]
           app ansible_host=$DEPLOY_HOST
 
           [production:vars]
-          ansible_user=$DEPLOY_USER
-          ansible_ssh_private_key_file=~/.ssh/deploy_key
+          deploy_user=$DEPLOY_USER
           EOF
 
       - name: Deploy published Docker image
