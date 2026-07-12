@@ -117,6 +117,14 @@ All other variables supported by Spring Boot can be overridden the same way; che
 
 ### Deployment
 
+Run one-time server provisioning with a sudo-capable user:
+
+```bash
+make provision
+```
+
+Provisioning installs Docker, configures UFW, creates the `deployer` user, and prepares persistent directories. Regular CI deployments use only the `deploy` tag and do not require `deployer` to have sudo privileges.
+
 Deploy the latest image in one command:
 
 ```bash
@@ -136,6 +144,31 @@ make deploy APP_IMAGE_TAG=v1.2.2
 ```
 
 Avoid using `latest` for rollback; choose the exact tag that was known to work.
+
+### CI/CD
+
+The GitHub Actions workflow runs backend and frontend checks for pull requests and pushes to `main`.
+
+For pull requests and pushes, it also runs an Ansible dry-run against the deployment host:
+
+```bash
+make ansible-dry-run
+```
+
+After a push to `main`, the workflow waits for a successful dry-run, then builds and pushes the Docker image, then deploys the commit-specific image tag:
+
+```bash
+make deploy APP_IMAGE_TAG=sha-<commit-sha>
+```
+
+Required GitHub Secrets:
+
+- `DOCKER_USERNAME`
+- `DOCKER_PASSWORD`
+- `DOCKER_IMAGE`
+- `DEPLOY_HOST`
+- `DEPLOY_USER`
+- `DEPLOY_SSH_KEY`
 
 ### Useful commands
 

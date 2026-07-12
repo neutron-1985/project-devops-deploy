@@ -3,8 +3,6 @@
   ansible.builtin.file:
     path: "{{ item.path }}"
     state: directory
-    owner: root
-    group: root
     mode: "{{ item.mode }}"
   loop:
     - path: "{{ app_data_dir }}"
@@ -52,7 +50,6 @@
     - name: Wait until application is ready
       ansible.builtin.uri:
         url: "http://127.0.0.1:{{ app_container_management_port }}/actuator/health/readiness"
-        method: GET
         status_code: 200
       register: app_healthcheck
       retries: "{{ app_healthcheck_retries }}"
@@ -71,7 +68,6 @@
     - name: Check application public endpoint
       ansible.builtin.uri:
         url: "http://127.0.0.1:{{ app_public_port }}{{ app_healthcheck_path }}"
-        method: GET
         status_code: "{{ app_healthcheck_status_codes }}"
       register: app_public_healthcheck
       retries: "{{ app_healthcheck_retries }}"
@@ -108,7 +104,6 @@
     - name: Wait until rolled back application is ready
       ansible.builtin.uri:
         url: "http://127.0.0.1:{{ app_container_management_port }}/actuator/health/readiness"
-        method: GET
         status_code: 200
       register: app_rollback_healthcheck
       retries: "{{ app_healthcheck_retries }}"
@@ -118,7 +113,6 @@
     - name: Check rolled back application public endpoint
       ansible.builtin.uri:
         url: "http://127.0.0.1:{{ app_public_port }}{{ app_healthcheck_path }}"
-        method: GET
         status_code: "{{ app_healthcheck_status_codes }}"
       register: app_rollback_public_healthcheck
       retries: "{{ app_healthcheck_retries }}"
