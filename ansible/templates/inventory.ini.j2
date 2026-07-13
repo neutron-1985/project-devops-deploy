@@ -1,0 +1,8 @@
+[production]
+{% for target in vault_deploy_targets %}
+{{ target.name }} ansible_host={{ target.address }}
+{% endfor %}
+
+[production:vars]
+provision_user={{ vault_provision_user }}
+deploy_user={{ vault_deploy_user }}

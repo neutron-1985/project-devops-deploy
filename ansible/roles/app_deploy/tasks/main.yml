@@ -1,3 +1,10 @@
 ---
+- name: Validate Docker image configuration
+  ansible.builtin.assert:
+    that:
+      - app_image_repository is defined
+      - app_image_repository | length > 0
+    fail_msg: "app_image_repository must identify the Docker image repository."
+
 - name: Deploy application container
   ansible.builtin.import_tasks: deploy_container.yml

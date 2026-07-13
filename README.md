@@ -4,9 +4,11 @@
 
 Bulletin board service.
 
+Deployed service: [n-devops.jumpingcrab.com](http://n-devops.jumpingcrab.com)
+
 ## Docker artifact
 
-This fork builds the backend and frontend into a single Spring Boot application image. The expected artifact is a Docker image named `project-devops-deploy` that contains the executable jar with the compiled React Admin frontend in Spring static resources.
+This fork builds the backend and frontend into a single Spring Boot application image. The image repository is configured in `config.mk`; the artifact contains the executable jar with the compiled React Admin frontend in Spring static resources.
 
 Build the image:
 
@@ -20,17 +22,11 @@ Start the container:
 make docker-start
 ```
 
-By default, Make uses the image name `project-devops-deploy`, publishes the application on port `8080` and Actuator on port `9090`. Override these values when needed:
+By default, Make uses the Docker registry and repository configured in `config.mk`, publishes the application on port `8080` and Actuator on port `9090`. Override the local image name and ports when needed:
 
 ```bash
 make docker-build IMAGE_NAME=my-project-devops-deploy
 make docker-start IMAGE_NAME=my-project-devops-deploy APP_PORT=8081 MANAGEMENT_PORT=9091
-```
-
-Equivalent direct command:
-
-```bash
-docker run --rm -p 8080:8080 -p 9090:9090 project-devops-deploy
 ```
 
 Open the service at `http://localhost:8080/`; Swagger UI is available at `http://localhost:8080/swagger-ui/index.html`.
@@ -130,20 +126,30 @@ Install the Ansible roles and collections:
 make ansible-install
 ```
 
-Create an inventory from the supplied example and adjust the hosts:
+Production targets and their verified SSH host keys are stored in the encrypted `ansible/vault/production.yml`. Create a local Vault password file and place the same password as the `ANSIBLE_VAULT_PASSWORD` GitHub Secret inside it:
 
 ```bash
-cp ansible/inventory.example.ini ansible/inventory.ini
+install -m 600 /dev/null ansible/.vault-password
+$EDITOR ansible/.vault-password
 ```
 
-The inventory defines infrastructure only. Do not set a global `ansible_user`: it would override the separate users selected by the provisioning and deployment plays.
+Edit the encrypted production configuration with:
 
-The connection users are configured in `ansible/group_vars/all/main.yml`:
-
-```yaml
-provision_user: neutron
-deploy_user: deployer
+```bash
+ansible-vault edit ansible/vault/production.yml --vault-password-file ansible/.vault-password
 ```
+
+Rotate the Vault password with:
+
+```bash
+make vault-rekey
+```
+
+The command opens a temporary password file in `$EDITOR`, re-encrypts the production Vault, and replaces the local `.vault-password` only after a successful rekey. Update the `ANSIBLE_VAULT_PASSWORD` GitHub Secret with the new value afterward.
+
+`make provision`, `make deploy`, and the Ansible check targets render a temporary `ansible/inventory.generated.ini` and `ansible/.generated/known_hosts`. The password file and rendered configuration are ignored by Git.
+
+The connection users are stored in the production Vault and rendered as `provision_user` and `deploy_user` variables for the `production` inventory group.
 
 - `provision_user` must be a sudo-capable account. It installs Docker, configures UFW, creates the deployment user and prepares persistent directories.
 - `deploy_user` performs regular container deployments without sudo. It must belong to the `docker` group and have an authorized SSH key.
@@ -154,11 +160,11 @@ The playbook targets the `production` inventory group. Run one-time server provi
 make provision
 ```
 
-Provisioning installs Docker, configures UFW, creates the `deployer` user, and prepares persistent directories. Regular CI deployments use only the `deploy` tag and do not require `deployer` to have sudo privileges.
+Provisioning installs Docker, configures UFW, creates the configured deployment user, and prepares persistent directories. Regular CI deployments use only the `deploy` tag and do not require that user to have sudo privileges.
 
-Before the first deployment, add the deployment public key to `/home/deployer/.ssh/authorized_keys` on every target server. The directory must be owned by `deployer:deployer` with mode `0700`; the `authorized_keys` file must use mode `0600`.
+Before the first deployment, add the deployment public key to `/home/<deploy_user>/.ssh/authorized_keys` on every target server. The directory and file must be owned by the configured deployment user; use mode `0700` for `.ssh` and `0600` for `authorized_keys`.
 
-The deployment role pulls `neutron1985/project-devops-deploy:latest` by default, starts it with the `dev` Spring profile, publishes ports `8080` and `9090`, and mounts uploaded images from `/var/lib/project-devops-deploy/bulletin-images`. These defaults live in `ansible/group_vars/all/main.yml` and `ansible/roles/app_deploy/defaults/main.yml` and can be overridden with Ansible extra variables.
+The deployment role pulls the repository configured in `config.mk` with the `latest` tag by default, starts it with the `dev` Spring profile, publishes ports `8080` and `9090`, and mounts uploaded images from `/var/lib/project-devops-deploy/bulletin-images`. Runtime defaults live in `ansible/roles/app_deploy/defaults/main.yml`.
 
 Deploy the latest image in one command:
 
@@ -170,12 +176,6 @@ Deploy a stable image tag explicitly:
 
 ```bash
 make deploy APP_IMAGE_TAG=v1.2.3
-```
-
-Use a different inventory when required:
-
-```bash
-make deploy ANSIBLE_INVENTORY=ansible/inventory.ci.ini APP_IMAGE_TAG=v1.2.3
 ```
 
 After starting the new container, the deployment waits for the Actuator readiness probe and checks the public endpoint. If the new container fails either check, the role recreates the container from the previously running image and reports a failed deployment.
@@ -190,7 +190,7 @@ Avoid using `latest` for rollback; choose the exact tag that was known to work.
 
 ### CI/CD
 
-For pull requests and pushes to `main`, the GitHub Actions workflow runs backend lint/tests and frontend lint/build. After those jobs succeed, it installs Ansible dependencies and runs the deployment role against the configured host in check/diff mode.
+For pull requests and pushes to `main`, the GitHub Actions workflow runs backend lint/tests and frontend lint/build. After a push to `main`, it also installs Ansible dependencies, decrypts the production configuration, and runs the deployment role against the configured hosts in check/diff mode.
 
 For pushes to `main`, the workflow then builds and publishes two Docker tags to Docker Hub: `latest` and `sha-<full-commit-sha>`. The deploy job uses the immutable commit-specific tag:
 
@@ -200,17 +200,13 @@ make deploy APP_IMAGE_TAG=sha-<commit-sha>
 
 Required GitHub Secrets:
 
-- `DOCKER_USERNAME`
 - `DOCKER_PASSWORD`
-- `DOCKER_IMAGE`
-- `DEPLOY_HOST`
-- `DEPLOY_USER`
 - `DEPLOY_SSH_KEY`
-- `DEPLOY_KNOWN_HOSTS`
+- `ANSIBLE_VAULT_PASSWORD`
 
-`DEPLOY_USER` overrides `deploy_user` for the temporary CI inventory. `DEPLOY_KNOWN_HOSTS` contains the pre-verified SSH host keys for all deployment targets, one entry per line. CI loads the private key into `ssh-agent` and verifies each server against this file before Ansible connects.
+`ANSIBLE_VAULT_PASSWORD` decrypts the production targets long enough to render the temporary inventory and `known_hosts` files on the runner. CI loads `DEPLOY_SSH_KEY` into `ssh-agent` and verifies every server against the host keys from the Vault before Ansible connects.
 
-`DOCKER_USERNAME` and `DOCKER_IMAGE` must identify the same repository configured by `docker_username` and `docker_image` in `ansible/group_vars/all/main.yml`; otherwise CI will publish one image while Ansible attempts to pull another.
+`config.mk` is the single source for the Docker registry, username, and repository used by local Docker commands, CI publishing, and Ansible deployment.
 
 ### Useful commands
 
@@ -223,10 +219,11 @@ Required GitHub Secrets:
 | `make docker-build` | Build the combined backend/frontend Docker image |
 | `make docker-start` | Run the local Docker image on application and management ports |
 | `make ansible-install` | Install required Ansible roles and collections |
+| `make ansible-configure` | Render temporary inventory and SSH known hosts from the production Vault |
+| `make vault-rekey` | Rotate the local and encrypted production Vault password |
 | `make provision` | Provision hosts from the production inventory group |
 | `make deploy` | Deploy the selected Docker image tag |
-| `make ansible-check` | Run the deployment role in Ansible check mode |
-| `make ansible-dry-run` | Run the deployment role with check and diff output |
+| `make ansible-check` | Run the deployment role in Ansible check mode with diff output |
 
 All defaults and supported overrides are defined in [Makefile](./Makefile).
 

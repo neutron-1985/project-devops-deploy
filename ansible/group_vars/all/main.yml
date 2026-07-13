@@ -1,6 +1,0 @@
----
-docker_username: neutron1985
-docker_image: project-devops-deploy
-
-provision_user: neutron
-deploy_user: deployer

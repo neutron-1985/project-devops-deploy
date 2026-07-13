@@ -1,12 +1,11 @@
-IMAGE_NAME ?= project-devops-deploy
+include config.mk
+
+EDITOR ?= vi
+IMAGE_NAME ?= $(DOCKER_REGISTRY)/$(DOCKER_REPOSITORY)
 APP_PORT ?= 8080
 MANAGEMENT_PORT ?= 9090
 APP_IMAGE_TAG ?= latest
-ANSIBLE_EXTRA_VARS ?= -e app_image_tag=$(APP_IMAGE_TAG)
-ANSIBLE_DEPLOY_TAGS ?= --tags deploy
-ANSIBLE_PROVISION_TAGS ?= --tags provision
-ANSIBLE_CONFIG ?= ansible/ansible.cfg
-ANSIBLE_INVENTORY ?= ansible/inventory.ini
+ANSIBLE = ANSIBLE_CONFIG=ansible/ansible.cfg ansible-playbook
 
 test:
 	./gradlew test
@@ -34,6 +33,11 @@ docker-build:
 docker-start:
 	docker run --rm -p $(APP_PORT):8080 -p $(MANAGEMENT_PORT):9090 $(IMAGE_NAME)
 
+docker-config:
+	@echo "registry=$(DOCKER_REGISTRY)"
+	@echo "username=$(DOCKER_USERNAME)"
+	@echo "repository=$(DOCKER_REPOSITORY)"
+
 lint:
 	./gradlew spotlessCheck
 
@@ -41,22 +45,25 @@ lint-fix:
 	./gradlew spotlessApply
 
 ansible-install:
-	ANSIBLE_CONFIG=$(ANSIBLE_CONFIG) ansible-galaxy install -r ansible/requirements.yml
+	ANSIBLE_CONFIG=ansible/ansible.cfg ansible-galaxy install -r ansible/requirements.yml
 
-provision: ansible-provision
+ansible-configure:
+	$(ANSIBLE) -i localhost, -c local ansible/playbooks/render_deploy_config.yml
 
-ansible-provision:
-	ANSIBLE_CONFIG=$(ANSIBLE_CONFIG) ansible-playbook -i $(ANSIBLE_INVENTORY) playbook.yml $(ANSIBLE_PROVISION_TAGS)
+vault-rekey:
+	install -m 700 -d ansible/.generated
+	install -m 600 /dev/null ansible/.generated/vault-password.new
+	$(EDITOR) ansible/.generated/vault-password.new
+	ansible-vault rekey --vault-password-file ansible/.vault-password --new-vault-password-file ansible/.generated/vault-password.new ansible/vault/production.yml
+	mv ansible/.generated/vault-password.new ansible/.vault-password
 
-deploy: ansible-deploy
+provision: ansible-configure
+	$(ANSIBLE) playbook.yml --tags provision
 
-ansible-deploy:
-	ANSIBLE_CONFIG=$(ANSIBLE_CONFIG) ansible-playbook -i $(ANSIBLE_INVENTORY) playbook.yml $(ANSIBLE_DEPLOY_TAGS) $(ANSIBLE_EXTRA_VARS)
+deploy: ansible-configure
+	$(ANSIBLE) playbook.yml --tags deploy -e app_image_repository=$(DOCKER_REGISTRY)/$(DOCKER_REPOSITORY) -e app_image_tag=$(APP_IMAGE_TAG)
 
-ansible-check:
-	ANSIBLE_CONFIG=$(ANSIBLE_CONFIG) ansible-playbook -i $(ANSIBLE_INVENTORY) playbook.yml $(ANSIBLE_DEPLOY_TAGS) --check $(ANSIBLE_EXTRA_VARS)
+ansible-check: ansible-configure
+	$(ANSIBLE) playbook.yml --tags deploy --check --diff -e app_image_repository=$(DOCKER_REGISTRY)/$(DOCKER_REPOSITORY) -e app_image_tag=$(APP_IMAGE_TAG)
 
-ansible-dry-run:
-	ANSIBLE_CONFIG=$(ANSIBLE_CONFIG) ansible-playbook -i $(ANSIBLE_INVENTORY) playbook.yml $(ANSIBLE_DEPLOY_TAGS) --check --diff $(ANSIBLE_EXTRA_VARS)
-
-.PHONY: build docker-build docker-start ansible-install provision ansible-provision deploy ansible-deploy ansible-check ansible-dry-run
+.PHONY: build docker-build docker-start docker-config ansible-install ansible-configure vault-rekey provision deploy ansible-check
