@@ -5,8 +5,10 @@ IMAGE_NAME ?= $(DOCKER_REGISTRY)/$(DOCKER_REPOSITORY)
 APP_PORT ?= 8080
 MANAGEMENT_PORT ?= 9090
 APP_IMAGE_TAG ?= latest
+ANSIBLE_LIMIT ?= production
 ANSIBLE = ANSIBLE_CONFIG=ansible/ansible.cfg ansible-playbook
 
+# Application
 test:
 	./gradlew test
 
@@ -27,6 +29,7 @@ install:
 build:
 	./gradlew build
 
+# Docker
 docker-build:
 	docker build -t $(IMAGE_NAME) .
 
@@ -38,12 +41,14 @@ docker-config:
 	@echo "username=$(DOCKER_USERNAME)"
 	@echo "repository=$(DOCKER_REPOSITORY)"
 
+# Code quality
 lint:
 	./gradlew spotlessCheck
 
 lint-fix:
 	./gradlew spotlessApply
 
+# Ansible
 ansible-install:
 	ANSIBLE_CONFIG=ansible/ansible.cfg ansible-galaxy install -r ansible/requirements.yml
 
@@ -58,12 +63,12 @@ vault-rekey:
 	mv ansible/.generated/vault-password.new ansible/.vault-password
 
 provision: ansible-configure
-	$(ANSIBLE) playbook.yml --tags provision
+	$(ANSIBLE) playbook.yml --tags provision --limit "$(ANSIBLE_LIMIT)"
 
 deploy: ansible-configure
-	$(ANSIBLE) playbook.yml --tags deploy -e app_image_repository=$(DOCKER_REGISTRY)/$(DOCKER_REPOSITORY) -e app_image_tag=$(APP_IMAGE_TAG)
+	$(ANSIBLE) playbook.yml --tags deploy --limit "$(ANSIBLE_LIMIT)" -e app_image_repository=$(DOCKER_REGISTRY)/$(DOCKER_REPOSITORY) -e app_image_tag=$(APP_IMAGE_TAG)
 
 ansible-check: ansible-configure
-	$(ANSIBLE) playbook.yml --tags deploy --check --diff -e app_image_repository=$(DOCKER_REGISTRY)/$(DOCKER_REPOSITORY) -e app_image_tag=$(APP_IMAGE_TAG)
+	$(ANSIBLE) playbook.yml --tags deploy --check --diff --limit "$(ANSIBLE_LIMIT)" -e app_image_repository=$(DOCKER_REGISTRY)/$(DOCKER_REPOSITORY) -e app_image_tag=$(APP_IMAGE_TAG)
 
 .PHONY: build docker-build docker-start docker-config ansible-install ansible-configure vault-rekey provision deploy ansible-check

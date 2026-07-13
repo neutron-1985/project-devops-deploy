@@ -1,5 +1,5 @@
-- name: Provision production servers
-  hosts: production
+- name: Provision managed servers
+  hosts: managed
   remote_user: "{{ provision_user }}"
   become: true
   gather_facts: false
@@ -38,7 +38,7 @@
     - name: Authorize deployment SSH key
       ansible.posix.authorized_key:
         user: "{{ deploy_user }}"
-        key: "{{ lookup('ansible.builtin.file', playbook_dir + '/ansible/files/deploy_authorized_key.pub') }}"
+        key: "{{ deploy_authorized_key }}"
         state: present
 
     - name: Install UFW
@@ -84,7 +84,7 @@
           mode: "0755"
 
 - name: Deploy application
-  hosts: production
+  hosts: managed
   remote_user: "{{ deploy_user }}"
   become: false
   gather_facts: false

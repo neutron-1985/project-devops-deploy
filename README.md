@@ -10,24 +10,14 @@ Deployed service: [n-devops.jumpingcrab.com](http://n-devops.jumpingcrab.com)
 
 This fork builds the backend and frontend into a single Spring Boot application image. The image repository is configured in `config.mk`; the artifact contains the executable jar with the compiled React Admin frontend in Spring static resources.
 
-Build the image:
+Build and start the image:
 
 ```bash
 make docker-build
-```
-
-Start the container:
-
-```bash
 make docker-start
 ```
 
-By default, Make uses the Docker registry and repository configured in `config.mk`, publishes the application on port `8080` and Actuator on port `9090`. Override the local image name and ports when needed:
-
-```bash
-make docker-build IMAGE_NAME=my-project-devops-deploy
-make docker-start IMAGE_NAME=my-project-devops-deploy APP_PORT=8081 MANAGEMENT_PORT=9091
-```
+The image name comes from `config.mk`; Make publishes the application on port `8080` and Actuator on `9090`.
 
 Open the service at `http://localhost:8080/`; Swagger UI is available at `http://localhost:8080/swagger-ui/index.html`.
 
@@ -147,56 +137,40 @@ make vault-rekey
 
 The command opens a temporary password file in `$EDITOR`, re-encrypts the production Vault, and replaces the local `.vault-password` only after a successful rekey. Update the `ANSIBLE_VAULT_PASSWORD` GitHub Secret with the new value afterward.
 
-`make provision`, `make deploy`, and the Ansible check targets render a temporary `ansible/inventory.generated.ini` and `ansible/.generated/known_hosts`. The password file and rendered configuration are ignored by Git.
+Targets, SSH host keys, connection users and each target's `production` or `reserve` group live in the Vault. Before provision, check or deploy, Make renders the ignored temporary files `ansible/inventory.generated.ini` and `ansible/.generated/known_hosts`.
 
-The connection users are stored in the production Vault and rendered as `provision_user` and `deploy_user` variables for the `production` inventory group.
+`provision_user` must have sudo access; regular deployments use the unprivileged `deploy_user`. Commands target `production` unless `ANSIBLE_LIMIT` is overridden.
 
-- `provision_user` must be a sudo-capable account. It installs Docker, configures UFW, creates the deployment user and prepares persistent directories.
-- `deploy_user` performs regular container deployments without sudo. It must belong to the `docker` group and have an authorized SSH key.
-
-The playbook targets the `production` inventory group. Run one-time server provisioning:
+Provision hosts:
 
 ```bash
 make provision
+make provision ANSIBLE_LIMIT=reserve
 ```
 
-Provisioning installs Docker, configures UFW, creates the configured deployment user, and prepares persistent directories. Regular CI deployments use only the `deploy` tag and do not require that user to have sudo privileges.
+Provisioning installs Docker and UFW, creates `deploy_user`, prepares persistent directories, and installs the public deployment key from the Vault into its `authorized_keys`.
 
-Provisioning installs the public key from `ansible/files/deploy_authorized_key.pub` into `/home/<deploy_user>/.ssh/authorized_keys` on every target server. Its private counterpart must be available locally to SSH and stored in the `DEPLOY_SSH_KEY` GitHub Secret for CI deployments.
-
-The deployment role pulls the repository configured in `config.mk` with the `latest` tag by default, starts it with the `dev` Spring profile, publishes ports `8080` and `9090`, and mounts uploaded images from `/var/lib/project-devops-deploy/bulletin-images`. Runtime defaults live in `ansible/roles/app_deploy/defaults/main.yml`.
-
-Deploy the latest image in one command:
+Check and deploy:
 
 ```bash
+make ansible-check
 make deploy
-```
-
-Deploy a stable image tag explicitly:
-
-```bash
 make deploy APP_IMAGE_TAG=v1.2.3
 ```
 
-After starting the new container, the deployment waits for the Actuator readiness probe and checks the public endpoint. If the new container fails either check, the role recreates the container from the previously running image and reports a failed deployment.
+The role starts the image with the `dev` profile, publishes ports `8080` and `9090`, and persists uploads under `/var/lib/project-devops-deploy/bulletin-images`. It waits for readiness and restores the previous image if deployment fails. Runtime defaults live in `ansible/roles/app_deploy/defaults/main.yml`.
 
-Rollback uses the same deployment path with a previously published stable tag:
+Rollback with a known immutable tag:
 
 ```bash
 make deploy APP_IMAGE_TAG=v1.2.2
 ```
 
-Avoid using `latest` for rollback; choose the exact tag that was known to work.
+Avoid using `latest` for rollback.
 
 ### CI/CD
 
-For pull requests and pushes to `main`, the GitHub Actions workflow runs backend lint/tests and frontend lint/build. After a push to `main`, it also installs Ansible dependencies, decrypts the production configuration, and runs the deployment role against the configured hosts in check/diff mode.
-
-For pushes to `main`, the workflow then builds and publishes two Docker tags to Docker Hub: `latest` and `sha-<full-commit-sha>`. The deploy job uses the immutable commit-specific tag:
-
-```bash
-make deploy APP_IMAGE_TAG=sha-<commit-sha>
-```
+Pull requests run backend and frontend checks. Pushes to `main` additionally run `ansible-check` against `production`, publish `latest` and immutable `sha-<commit-sha>` Docker tags, and deploy the SHA tag.
 
 Required GitHub Secrets:
 
@@ -219,13 +193,11 @@ Required GitHub Secrets:
 | `make docker-build` | Build the combined backend/frontend Docker image |
 | `make docker-start` | Run the local Docker image on application and management ports |
 | `make ansible-install` | Install required Ansible roles and collections |
-| `make ansible-configure` | Render temporary inventory and SSH known hosts from the production Vault |
-| `make vault-rekey` | Rotate the local and encrypted production Vault password |
 | `make provision` | Provision hosts from the production inventory group |
 | `make deploy` | Deploy the selected Docker image tag |
 | `make ansible-check` | Run the deployment role in Ansible check mode with diff output |
 
-All defaults and supported overrides are defined in [Makefile](./Makefile).
+Command overrides are defined in [Makefile](./Makefile); image settings live in `config.mk`, and deployment defaults in `ansible/roles/app_deploy/defaults/main.yml`.
 
 ## Frontend
 
@@ -268,22 +240,6 @@ All defaults and supported overrides are defined in [Makefile](./Makefile).
 
 3. Restart the backend (`make run`) and open `http://localhost:8080/` — the React app will now be served directly by the Java application.
 
-### Running in Docker
-
-Pass JVM flags via `JAVA_OPTS`:
-
-```bash
-docker run --rm -p 8080:8080 \
-  -e JAVA_OPTS="-Xms256m -Xmx512m -Dspring.profiles.active=prod" \
-  ...
-```
-
-Useful JVM options:
-
-- `-Xms/-Xmx` — set memory limits inside the container.
-- `-XX:+UseContainerSupport` / `-XX:ActiveProcessorCount` (these respect cgroup limits by default).
-- `-Dspring.profiles.active=prod` — switch the profile without recompiling.
-- `-Dlogging.level.root=INFO` or Spring environment variables (`SPRING_DATASOURCE_URL`, `STORAGE_S3_BUCKET`, etc.) — configure external services.
 
 ## Monitoring / management ports
 
