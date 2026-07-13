@@ -61,8 +61,9 @@ All other variables supported by Spring Boot can be overridden the same way; che
 - JDK 21+.
 - Gradle 9.2.1.
 - PostgreSQL only if you run the `prod` profile with an external database.
+- S3-compatible object storage only if you run the `prod` profile.
 - Make.
-- NodeJS 20+
+- Node.js 24+.
 
 ## Running
 
@@ -101,7 +102,7 @@ All other variables supported by Spring Boot can be overridden the same way; che
 
     ```bash
     make build
-    java -jar build/libs/project-devops-deploy-0.0.1-SNAPSHOT.jar
+    java $JAVA_OPTS -jar build/libs/project-devops-deploy-0.0.1-SNAPSHOT.jar
     ```
 
 3. Serve the frontend either from the same JVM (see **Build and serve from the Java app**) or deploy it separately (any static hosting/CDN works once `frontend/dist` is uploaded).
@@ -116,7 +117,7 @@ Install the Ansible roles and collections:
 make ansible-install
 ```
 
-Production targets and their verified SSH host keys are stored in the encrypted `ansible/vault/production.yml`. Create a local Vault password file and place the same password as the `ANSIBLE_VAULT_PASSWORD` GitHub Secret inside it:
+Deployment targets and their verified SSH host keys are stored in the encrypted `ansible/vault/production.yml`. Create a local Vault password file and place the same password as the `ANSIBLE_VAULT_PASSWORD` GitHub Secret inside it:
 
 ```bash
 install -m 600 /dev/null ansible/.vault-password
@@ -135,9 +136,9 @@ Rotate the Vault password with:
 make vault-rekey
 ```
 
-The command opens a temporary password file in `$EDITOR`, re-encrypts the production Vault, and replaces the local `.vault-password` only after a successful rekey. Update the `ANSIBLE_VAULT_PASSWORD` GitHub Secret with the new value afterward.
+The command opens a temporary password file in `$EDITOR`, re-encrypts all deployment and service Vault files, and replaces the local `.vault-password` only after a successful rekey. Update the `ANSIBLE_VAULT_PASSWORD` GitHub Secret with the new value afterward.
 
-Targets, SSH host keys, connection users and each target's `production` or `reserve` group live in the Vault. Before provision, check or deploy, Make renders the ignored temporary files `ansible/inventory.generated.ini` and `ansible/.generated/known_hosts`.
+Targets, SSH host keys, connection users and each target's `production` or `dev` group live in the Vault. Before provision, check or deploy, Make renders the ignored temporary files `ansible/inventory.generated.ini` and `ansible/.generated/known_hosts`.
 
 `provision_user` must have sudo access; regular deployments use the unprivileged `deploy_user`. Commands target `production` unless `ANSIBLE_LIMIT` is overridden.
 
@@ -145,12 +146,42 @@ Provision hosts:
 
 ```bash
 make provision
-make provision ANSIBLE_LIMIT=reserve
+make provision ANSIBLE_LIMIT=dev
 ```
 
-Provisioning installs Docker and UFW, creates `deploy_user`, prepares persistent directories, and installs the public deployment key from the Vault into its `authorized_keys`.
+The `server_provision` role installs Docker and UFW, creates `deploy_user`, prepares persistent directories, and installs the public deployment key from the Vault into its `authorized_keys`. Its defaults live in `ansible/roles/server_provision/defaults/main.yml`.
 
-Check and deploy:
+Provision PostgreSQL:
+
+```bash
+make database
+```
+
+The play installs Docker and applies the `postgresql` role, which runs
+PostgreSQL 17 with a persistent Docker volume. Database credentials live in
+the encrypted `ansible/group_vars/all/vault.yml`.
+
+Provision S3-compatible object storage:
+
+```bash
+make storage
+```
+
+The play installs Docker and applies the `minio` role, which runs MinIO with a
+persistent Docker volume and the `bulletin-images` bucket. MinIO credentials
+live in `ansible/group_vars/all/minio_vault.yml`.
+
+The `database` and `object_storage` inventory groups currently point to the
+same host, but the services are provisioned independently and can be moved
+separately later.
+
+Both containers use host networking so UFW can restrict PostgreSQL port `5432`
+and MinIO API port `9000` to the configured application-server CIDRs. The MinIO
+web console is disabled. Removing a CIDR from the allowlist revokes its rules on
+the next run. The host endpoint and pinned SSH key live in the encrypted
+`ansible/vault/production.yml`.
+
+Check and deploy production:
 
 ```bash
 make ansible-check
@@ -158,7 +189,21 @@ make deploy
 make deploy APP_IMAGE_TAG=v1.2.3
 ```
 
-The role starts the image with the `dev` profile, publishes ports `8080` and `9090`, and persists uploads under `/var/lib/project-devops-deploy/bulletin-images`. It waits for readiness and restores the previous image if deployment fails. Runtime defaults live in `ansible/roles/app_deploy/defaults/main.yml`.
+Check and deploy dev:
+
+```bash
+make ansible-check ANSIBLE_LIMIT=dev
+make deploy ANSIBLE_LIMIT=dev
+```
+
+For `production`, the role starts the image with the `prod` profile, passes
+encrypted PostgreSQL and MinIO credentials, and publishes ports `8080` and
+`9090`. It waits for readiness and attempts to restore the previous image if
+deployment fails. Runtime
+defaults live in `ansible/roles/app_deploy/defaults/main.yml`.
+
+For `dev`, the same role uses the `dev` profile with H2 and local filesystem
+storage without receiving production credentials.
 
 Rollback with a known immutable tag:
 
@@ -178,7 +223,7 @@ Required GitHub Secrets:
 - `DEPLOY_SSH_KEY`
 - `ANSIBLE_VAULT_PASSWORD`
 
-`ANSIBLE_VAULT_PASSWORD` decrypts the production targets long enough to render the temporary inventory and `known_hosts` files on the runner. CI loads `DEPLOY_SSH_KEY` into `ssh-agent` and verifies every server against the host keys from the Vault before Ansible connects.
+`ANSIBLE_VAULT_PASSWORD` decrypts the deployment targets long enough to render the temporary inventory and `known_hosts` files on the runner. CI loads `DEPLOY_SSH_KEY` into `ssh-agent` and verifies every server against the host keys from the Vault before Ansible connects.
 
 `config.mk` is the single source for the Docker registry, username, and repository used by local Docker commands, CI publishing, and Ansible deployment.
 
@@ -193,7 +238,10 @@ Required GitHub Secrets:
 | `make docker-build` | Build the combined backend/frontend Docker image |
 | `make docker-start` | Run the local Docker image on application and management ports |
 | `make ansible-install` | Install required Ansible roles and collections |
-| `make provision` | Provision hosts from the production inventory group |
+| `make vault-rekey` | Rotate the password of all Ansible Vault files |
+| `make provision` | Provision the selected inventory group (`production` by default) |
+| `make database` | Provision PostgreSQL and its firewall rules |
+| `make storage` | Provision MinIO and its firewall rules |
 | `make deploy` | Deploy the selected Docker image tag |
 | `make ansible-check` | Run the deployment role in Ansible check mode with diff output |
 

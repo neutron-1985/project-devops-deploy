@@ -43,10 +43,8 @@
           - "0.0.0.0:{{ app_container_management_port }}:9090"
         volumes:
           - "{{ app_uploads_dir }}:{{ app_container_uploads_dir }}"
-        env:
-          SPRING_PROFILES_ACTIVE: "{{ app_profile }}"
-          MANAGEMENT_SERVER_PORT: "9090"
-          JAVA_OPTS: "{{ app_java_opts }}"
+        env: "{{ app_common_environment | combine(app_external_services_environment) }}"
+      no_log: true
 
     - name: Wait until application is ready
       ansible.builtin.uri:
@@ -101,10 +99,8 @@
           - "0.0.0.0:{{ app_container_management_port }}:9090"
         volumes:
           - "{{ app_uploads_dir }}:{{ app_container_uploads_dir }}"
-        env:
-          SPRING_PROFILES_ACTIVE: "{{ app_profile }}"
-          MANAGEMENT_SERVER_PORT: "9090"
-          JAVA_OPTS: "{{ app_java_opts }}"
+        env: "{{ app_common_environment | combine(app_external_services_environment) }}"
+      no_log: true
 
     - name: Wait until rolled back application is ready
       ansible.builtin.uri:

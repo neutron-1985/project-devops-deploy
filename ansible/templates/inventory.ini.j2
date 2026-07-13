@@ -6,6 +6,12 @@
 {% endfor %}
 {% endfor %}
 
+[database]
+{{ vault_database_target.name }} ansible_host={{ vault_database_target.address }}
+
+[object_storage]
+{{ vault_database_target.name }} ansible_host={{ vault_database_target.address }}
+
 [managed:children]
 {% for target_group in target_groups %}
 {{ target_group }}
@@ -15,3 +21,13 @@
 provision_user={{ vault_provision_user }}
 deploy_user={{ vault_deploy_user }}
 deploy_authorized_key={{ vault_deploy_authorized_key | to_json }}
+
+[production:vars]
+app_database_host={{ vault_database_target.address }}
+app_s3_endpoint=http://{{ vault_database_target.address }}:9000
+
+[database:vars]
+ansible_user={{ vault_provision_user }}
+
+[object_storage:vars]
+ansible_user={{ vault_provision_user }}

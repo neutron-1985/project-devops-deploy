@@ -2,86 +2,11 @@
   hosts: managed
   remote_user: "{{ provision_user }}"
   become: true
-  gather_facts: false
   tags:
     - provision
 
-  vars:
-    users:
-      - name: "{{ deploy_user }}"
-        groups: docker
-    allowed_tcp_ports:
-      - "22"
-      - "8080"
-      - "9090"
-    app_data_dir: /var/lib/project-devops-deploy
-    app_uploads_dir: "{{ app_data_dir }}/bulletin-images"
-    app_log_dir: /var/log/project-devops-deploy
-
-  pre_tasks:
-    - name: Gather facts for provisioning
-      ansible.builtin.setup:
-
   roles:
-    - role: geerlingguy.docker
-
-  tasks:
-    - name: Add deploy users
-      ansible.builtin.user:
-        name: "{{ item.name }}"
-        groups: "{{ item.groups }}"
-        append: true
-        state: present
-        shell: /bin/bash
-      loop: "{{ users }}"
-
-    - name: Authorize deployment SSH key
-      ansible.posix.authorized_key:
-        user: "{{ deploy_user }}"
-        key: "{{ deploy_authorized_key }}"
-        state: present
-
-    - name: Install UFW
-      ansible.builtin.apt:
-        name: ufw
-        state: present
-        update_cache: true
-
-    - name: Allow required TCP ports
-      community.general.ufw:
-        rule: allow
-        port: "{{ item }}"
-        proto: tcp
-      loop: "{{ allowed_tcp_ports }}"
-
-    - name: Set default incoming policy to deny
-      community.general.ufw:
-        direction: incoming
-        policy: deny
-
-    - name: Set default outgoing policy to allow
-      community.general.ufw:
-        direction: outgoing
-        policy: allow
-
-    - name: Enable UFW
-      community.general.ufw:
-        state: enabled
-
-    - name: Create application persistent directories
-      ansible.builtin.file:
-        path: "{{ item.path }}"
-        state: directory
-        owner: "{{ deploy_user }}"
-        group: docker
-        mode: "{{ item.mode }}"
-      loop:
-        - path: "{{ app_data_dir }}"
-          mode: "0755"
-        - path: "{{ app_uploads_dir }}"
-          mode: "0777"
-        - path: "{{ app_log_dir }}"
-          mode: "0755"
+    - role: server_provision
 
 - name: Deploy application
   hosts: managed
@@ -93,3 +18,23 @@
 
   roles:
     - role: app_deploy
+
+- name: Provision PostgreSQL database
+  hosts: database
+  become: true
+  tags:
+    - database
+
+  roles:
+    - role: geerlingguy.docker
+    - role: postgresql
+
+- name: Provision object storage
+  hosts: object_storage
+  become: true
+  tags:
+    - storage
+
+  roles:
+    - role: geerlingguy.docker
+    - role: minio
