@@ -35,6 +35,12 @@
         shell: /bin/bash
       loop: "{{ users }}"
 
+    - name: Authorize deployment SSH key
+      ansible.posix.authorized_key:
+        user: "{{ deploy_user }}"
+        key: "{{ lookup('ansible.builtin.file', playbook_dir + '/ansible/files/deploy_authorized_key.pub') }}"
+        state: present
+
     - name: Install UFW
       ansible.builtin.apt:
         name: ufw

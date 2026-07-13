@@ -162,7 +162,7 @@ make provision
 
 Provisioning installs Docker, configures UFW, creates the configured deployment user, and prepares persistent directories. Regular CI deployments use only the `deploy` tag and do not require that user to have sudo privileges.
 
-Before the first deployment, add the deployment public key to `/home/<deploy_user>/.ssh/authorized_keys` on every target server. The directory and file must be owned by the configured deployment user; use mode `0700` for `.ssh` and `0600` for `authorized_keys`.
+Provisioning installs the public key from `ansible/files/deploy_authorized_key.pub` into `/home/<deploy_user>/.ssh/authorized_keys` on every target server. Its private counterpart must be available locally to SSH and stored in the `DEPLOY_SSH_KEY` GitHub Secret for CI deployments.
 
 The deployment role pulls the repository configured in `config.mk` with the `latest` tag by default, starts it with the `dev` Spring profile, publishes ports `8080` and `9090`, and mounts uploaded images from `/var/lib/project-devops-deploy/bulletin-images`. Runtime defaults live in `ansible/roles/app_deploy/defaults/main.yml`.
 
