@@ -5,6 +5,11 @@ WORKDIR /app/frontend
 COPY frontend/package*.json ./
 RUN npm ci
 
+# Keep react-admin 5 on its compatible MUI major without modifying upstream manifests.
+RUN npm install --no-save --package-lock=false \
+    @mui/material@7.3.11 \
+    @mui/icons-material@7.3.11
+
 COPY frontend/ ./
 RUN npm run build
 

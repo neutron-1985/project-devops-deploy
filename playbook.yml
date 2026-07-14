@@ -8,6 +8,18 @@
   roles:
     - role: server_provision
 
+- name: Migrate production database
+  hosts: production
+  remote_user: "{{ deploy_user }}"
+  become: false
+  gather_facts: false
+  any_errors_fatal: true
+  tags:
+    - deploy
+
+  roles:
+    - role: database_migrations
+
 - name: Deploy application
   hosts: managed
   remote_user: "{{ deploy_user }}"

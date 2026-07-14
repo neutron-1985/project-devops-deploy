@@ -4,7 +4,7 @@
 
 Bulletin board service.
 
-Deployed service: [n-devops.jumpingcrab.com](http://n-devops.jumpingcrab.com)
+Deployed service: [n-devops.jumpingcrab.com:8080](http://n-devops.jumpingcrab.com:8080)
 
 ## Docker artifact
 
@@ -175,11 +175,11 @@ The `database` and `object_storage` inventory groups currently point to the
 same host, but the services are provisioned independently and can be moved
 separately later.
 
-Both containers use host networking so UFW can restrict PostgreSQL port `5432`
-and MinIO API port `9000` to the configured application-server CIDRs. The MinIO
-web console is disabled. Removing a CIDR from the allowlist revokes its rules on
-the next run. The host endpoint and pinned SSH key live in the encrypted
-`ansible/vault/production.yml`.
+Both containers use host networking. UFW restricts PostgreSQL port `5432` to
+the configured application-server CIDRs. MinIO port `9000` is currently public
+so browsers can open presigned image URLs; the bucket itself remains private
+and the MinIO web console is disabled. The host endpoint and pinned SSH key
+live in the encrypted `ansible/vault/production.yml`.
 
 Check and deploy production:
 
@@ -196,13 +196,18 @@ make ansible-check ANSIBLE_LIMIT=dev
 make deploy ANSIBLE_LIMIT=dev
 ```
 
-For `production`, the role starts the image with the `prod` profile, passes
-encrypted PostgreSQL and MinIO credentials, and publishes ports `8080` and
-`9090`. It waits for readiness and attempts to restore the previous image if
-deployment fails. Runtime
-defaults live in `ansible/roles/app_deploy/defaults/main.yml`.
+For `production`, the `database_migrations` role applies the versioned SQL
+files from `ansible/roles/database_migrations/files/migrations` with a one-shot
+Flyway container. It runs once before `app_deploy`, even when the production
+group contains several application servers. A failed migration stops the
+deployment before the running application is replaced. Hibernate validates the
+resulting schema instead of changing it. The first deployment baselines an
+existing database at version `1`; a new empty database receives
+`V1__create_bulletins_table.sql`. Migration defaults live in
+`ansible/roles/database_migrations/defaults/main.yml`. Application runtime
+defaults remain in `ansible/roles/app_deploy/defaults/main.yml`.
 
-For `dev`, the same role uses the `dev` profile with H2 and local filesystem
+For `dev`, `app_deploy` uses the `dev` profile with H2 and local filesystem
 storage without receiving production credentials.
 
 Rollback with a known immutable tag:
@@ -215,7 +220,7 @@ Avoid using `latest` for rollback.
 
 ### CI/CD
 
-Pull requests run backend and frontend checks. Pushes to `main` additionally run `ansible-check` against `production`, publish `latest` and immutable `sha-<commit-sha>` Docker tags, and deploy the SHA tag.
+Pull requests run backend and frontend checks. Pushes to `main` additionally run `ansible-check` against `production`, publish `latest` and immutable `sha-<commit-sha>` Docker tags, apply pending database migrations, and deploy the SHA tag.
 
 Required GitHub Secrets:
 
