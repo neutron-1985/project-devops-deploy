@@ -18,14 +18,18 @@ FROM eclipse-temurin:21-jdk-alpine AS backend-builder
 
 WORKDIR /app
 
+RUN apk add --no-cache patch
+
 COPY gradle ./gradle
 COPY gradlew settings.gradle.kts build.gradle.kts versions.properties ./
 RUN ./gradlew dependencies --no-daemon > /dev/null
 
 COPY src ./src
 COPY public ./public
+COPY docker/patches/storage-config.patch /tmp/storage-config.patch
 COPY --from=frontend-builder /app/frontend/dist ./src/main/resources/static
 
+RUN patch --batch --forward -p1 < /tmp/storage-config.patch
 RUN ./gradlew test --no-daemon
 RUN ./gradlew bootJar --no-daemon
 
